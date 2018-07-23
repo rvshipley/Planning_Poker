@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Editable Grid Example</title>
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript">
+        function f_newEstimate(name, points, role, justification) {
+            //alert('name *** ' + name + ' **** points *** ' + points + ' **** role *** ' + role + ' **** justification *** ' + justification);
+            var currtime = Ext.Date.format(new Date(), 'n/j h:ia');
+            console.log("Current time is:", currtime);
+            var newInput = '{' +
+						      	'"name":"' + name + '",' +
+						        '"points":"' + points + '",' +
+						        '"role":"' + role + '",' +
+						        '"justification":"' + justification + '",' +
+                                '"UpdatedTime":"' + currtime +
+					    	'"}';
+            //return JSON.parse(newInput.toString());
+            return newInput.toString();
+        }
+        function getExistingEstimates(story) {
+            var estimatesString = story.get('c_PONote');
+            if (estimatesString != '')
+                return JSON.parse(estimatesString.toString());
+            else {
+                estimatesString = '[]';
+                return JSON.parse(estimatesString.toString());
+            }
+        }
+        function saveEstimates(story, stringOfEstimates) {
+            story.set('c_PONote', stringOfEstimates.toString());
+            story.save();
+        }
+        Rally.onReady(function () {
+            Ext.define('MyRallyPoker',
+			{
+			    extend: 'Rally.app.App',
+			    componentCls: 'app',
+			    launch: function () {
+
+			       
+
+			        //-------------------------------------
+			        var currentContext = this.getContext();
+			        var user = currentContext.getUser();
+			        var uName = user.UserName;
+			        var role;
+			        var name;
+			        console.log('Fetch Name 1 **** ' + uName);
+			        var userStore = Ext.create('Rally.data.wsapi.Store', {
+			            model: 'User', //or defectModel
+			            filters: [
+							{
+							    property: 'Name',
+							    operator: '=',
+							    value: uName
+							}
+			            ],
+			            fetch: ['Name', 'Role', 'FirstName', 'LastName'],
+			            autoLoad: true,
+			            listeners: {
+			                load: function (store, records) {
+			                    var user1 = records[0];
+			                    role = user1.get('Role');
+			                    name = user1.get('FirstName') + ' ' + user1.get('LastName');
+			                    //var actualName = user1.get('FirstName');
+			                    console.log('actualName **** ' + name);
+			                    console.log('Fetch Name 2 **** ' + records.length);
+			                    this._renderGrid(role, name);
+			                },
+			                scope: this
+			            }
+			        });
+
+			    },
+
+			   
+
+			    _renderGrid: function (role, name) {
+
+                    
+			        var myglobalData;
+			        var reloadformdata;
+			        var reloadcounter = 0;
+			        this.add(
+					{
+					    xtype: 'rallygrid',
+					    columnCfgs: [
+							'FormattedID',
+							'Name',
+							'Owner',
+							'c_PONote',
+							'PlanEstimate'],
+					    context: this.getContext(),
+					    enableEditing: true,
+					    showRowActionsColumn: true,
+					    rowActionColumnConfig:
+						{
+						    xtype: 'actioncolumn',
+						    width: 50,
+						    items: [
+							{
+							    icon: 'https://upload.wikimedia.org/wikipedia/en/2/2f/ColourShading.png',  // Use a URL in the icon config
+							    tooltip: 'Edit',
+							    handler: function (grid, rowIndex, colIndex) {
+							        var rec = grid.getStore().getAt(rowIndex);
+							        var objectId = grid.getStore().getAt(rowIndex).get('ObjectID');
+							        console.log('ObjectId' + objectId);
+							        console.log('Above If **** Role **** ' + role);
+                                    //karthik changes
+							        if (role == 'Team Member')
+							       // if (role == 'Scrum/Agile Master')
+							        {
+							            Rally.data.ModelFactory.getModel(
+										{
+										    type: 'userstory',
+										    success: function (model) {
+										        //console.log('successfully got model');
+										        //console.log(model);
+										        model.load(objectId,
+												{
+												    fetch: ['FormattedID','ObjectID', 'c_PONote', 'PlanEstimate'],
+												    callback: function (result, operation) {
+												        console.log('loading... ' + objectId);
+												        if (operation.wasSuccessful()) {
+												            //result.set('c_EnableEstimate', true);'
+												            //result.save();
+												            var alreadyestimated = result.get('PlanEstimate');
+												            if (alreadyestimated != null) {
+												                alert("User Story Already Estimated. Please contact Scrum Master for re-estimation.");
+												                return;
+												            }
+												            console.log("Already estimated:" + alreadyestimated);
+												            var userstorynumber=result.get('FormattedID');
+												            Ext.create('Ext.window.Window', {
+												                title: 'Planning Poker-Team Member view : '+userstorynumber, height: 200, width: 400, layout: 'fit',
+												                items: [
+																	//*************** START PANEL FORM 1 *******************
+																	Ext.create('Ext.form.Panel', {
+																	    bodyPadding: 5, width: 350, url: 'save-form.php',
+																		layout: { type: 'vbox', align: 'stretch', pack: 'start' },
+																	    defaults: { anchor: '100%' },
+																	    //Fields
+																	    defaultType: 'textfield',
+																	    
+																	    items: [
+																			{ fieldLabel: 'Estimate', name: 'Estimate', allowBlank: false, id: 'estimate' },
+																			{ fieldLabel: 'Justification', name: 'Justification', allowBlank: false, id: 'justification' }
+																	    ],
+																	    // Reset and Submit buttons
+																	    buttons: [
+																			//{ text: 'Reset', handler: function () { this.up('form').getForm().reset(); } },
+																			{
+																			    text: 'Submit', formBind: true, disabled: true,
+																			    handler: function () {
+																			        //alert(f_newEstimate('name','points','role','justification'));
+																			        var EstimateObject = getExistingEstimates(result);
+																			        if (EstimateObject)
+																			            console.log('Notes ************ ' + result.get('Notes'));
+																			        console.log('Stringfy ************ ' + JSON.stringify(EstimateObject));
+																			        //rec.set('PlanEstimate', estFinal);
+																			        var jsonobj = f_newEstimate(name, Ext.getCmp('estimate').getValue(), role, Ext.getCmp('justification').getValue());
+																			        console.log("json raw is", jsonobj);
+																			        //console.log("json justi is", jsonobj.justification);
+																			        console.log("PO note is", result.get('c_PONote'));
+																			        //var existingPONote = result.get('c_PONote');
+																			        //var newponote = existingPONote + ',' + jsonobj;
+
+
+																			       
+
+																			        var CurrentVersionID;
+																			        var newVersionID;
+																			        //Exp Karthik Starts
+																			        var myStore = Ext.create('Rally.data.wsapi.Store', {
+																			            model: 'User Story',
+																			            autoLoad: true,                         // <----- Don't forget to set this to true! heh
+																			            filters: [
+                                                                                                {
+                                                                                                    property: 'ObjectID',
+                                                                                                    operator: '=',
+                                                                                                    value: objectId
+                                                                                                }
+																			            ],
+																			            listeners: {
+																			                load: function (myStore, myData, success) {
+
+																			                    CurrentVersionID = myStore.data.items["0"].data.VersionId;
+
+																			                    console.log("Version ID is", myStore.data.items["0"].data.VersionId);
+
+																			                },
+																			                scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
+																			            },
+																			            fetch: ['ObjectID', 'c_PONote', 'VersionId']   // Look in the WSAPI docs online to see all fields available!
+																			        });
+                                                                                    
+
+																			        //*Exp Karthik Ends
+                                                                                                                                                                                                                                                                                                                                                
+
+																			        var existingPONote = result.get('c_PONote');
+
+																			        var newponote = '';
+																			        if (existingPONote.length == 0) {
+																			            newponote = '[' + jsonobj + ']';
+																			        }
+																			        else {
+																			            replacestr = ',' + jsonobj + ']';
+																			            newponote = existingPONote.replace(']', replacestr);
+																			        }
+
+																			        rec.set('c_PONote', newponote);
+
+																		
+
+
+																			        //Exp Karthik Starts
+																			        var myStore = Ext.create('Rally.data.wsapi.Store', {
+																			            model: 'User Story',
+																			            autoLoad: true,                         // <----- Don't forget to set this to true! heh
+																			            filters: [
+                                                                                                {
+                                                                                                    property: 'ObjectID',
+                                                                                                    operator: '=',
+                                                                                                    value: objectId
+                                                                                                }
+																			            ],
+																			            listeners: {
+																			                load: function (myStore, myData, success) {
+
+																			                    newVersionID = myStore.data.items["0"].data.VersionId;
+
+																			                    console.log("Version ID is", myStore.data.items["0"].data.VersionId);
+
+																			                },
+																			                scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
+																			            },
+																			            fetch: ['ObjectID', 'c_PONote', 'VersionId']   // Look in the WSAPI docs online to see all fields available!
+																			        });
+
+
+																			        //*Exp Karthik Ends
+
+
+                                                                                    
+																			      //  console.log("I called the function", this._getObjectValues(userstorynumber));
+
+																			        if (CurrentVersionID == newVersionID) {
+
+																			            rec.save();
+																			        }
+																			        else
+																			        {
+
+
+																			            //Exp Karthik Starts
+																			            var myStore = Ext.create('Rally.data.wsapi.Store', {
+																			                model: 'User Story',
+																			                autoLoad: true,                         // <----- Don't forget to set this to true! heh
+																			                filters: [
+                                                                                                    {
+                                                                                                        property: 'ObjectID',
+                                                                                                        operator: '=',
+                                                                                                        value: objectId
+                                                                                                    }
+																			                ],
+																			                listeners: {
+																			                    load: function (myStore, myData, success) {
+
+																			                        newVersionID = myStore.data.items["0"].data.VersionId;
+
+																			                        console.log("Version ID is", myStore.data.items["0"].data.VersionId);
+
+																			                    },
+																			                    scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
+																			                },
+																			                fetch: ['ObjectID', 'c_PONote', 'VersionId']   // Look in the WSAPI docs online to see all fields available!
+																			            });
+
+
+																			            //*Exp Karthik Ends
+
+																			           
+																			            var existingPONote = myStore.data.items["0"].data.c_PONote;
+
+																			            var newponote = '';
+																			            if (existingPONote.length == 0) {
+																			                newponote = '[' + jsonobj + ']';
+																			            }
+																			            else {
+																			                replacestr = ',' + jsonobj + ']';
+																			                newponote = existingPONote.replace(']', replacestr);
+																			            }
+
+																			            rec.set('c_PONote', newponote);
+																			            console.log("Concurrent versions saved", newponote);
+																			            rec.save();
+																			        }
+
+																			       
+																			        console.log('Submit Success1');
+																			        this.up('window').close();
+																			    }
+																			}],
+																	    renderTo: Ext.getBody()
+																	})
+																	//************** END PANEL FORM 1 ********************
+												                ]
+												            }).show(); // End of Window 1 *******************************
+												        }//************** END OF IF **************************************
+												    }, //************** END OF CALLBACK **************************************
+												    scope: this
+												});//************** END OF MODEL LOAD **************************************
+										    }, //End of success Function within Team Member's Model
+										    failure: function () {
+										        console.log('failed to get model');
+										    },
+										    scope: this//subbu
+
+										});
+							        }//End Of If(role == Team Member)
+							        //else if(role == 'Scrum/Agile Master'){
+							        //if (role == 'Team Member')
+							        if (role == 'Scrum/Agile Master') {
+							            //*************************** START MODEL 2 ***********************
+							            Rally.data.ModelFactory.getModel({
+							                type: 'userstory',
+							                // ************* START SUCCESS FUNCTION *******************
+							                success: function (model) {
+							                    model.load(objectId,
+												{
+												    fetch: ['FormattedID','ObjectID', 'c_PONote'],
+												    callback: function (result, operation) {
+												        console.log('loading... ' + objectId);
+												        if (operation.wasSuccessful()) {
+
+												            // console.log("Result is :", result.data.c_PONote);
+												            var tempresult = '';
+												            if (result.data.c_PONote != '') {
+												                tempresult = JSON.parse(result.data.c_PONote.toString());
+												            }
+
+												            //   console.log("JSON file is,",tempresult);
+												            //var parsed = JSON.parse(json);
+
+
+												            var store = new Ext.data.JsonStore({
+												                //new Ext.data.ArrayStore({
+												                autoDestroy: true,
+												                // url: 'get-images.php',
+												                storeId: 'myStore',
+												                // reader configs
+												                //root: 'images',
+												                fields: [
+                                                                      { name: 'name' },
+                                                                      { name: 'role' },
+                                                                      { name: 'points', type: 'float' },
+                                                                      { name: 'justification' },
+                                                                      { name: 'UpdatedTime', type: 'date', dateFormat: 'n/j h:ia' }
+												                ]
+												            });
+												            //debugger
+
+												            store.loadData(tempresult);
+												            function change(val) {
+												                if (val <= 8) {
+												                    return '<span style="color:green;">' + val + '</span>';
+												                } else if (val > 8) {
+												                    return '<span style="color:red;">' + val + '</span>';
+												                }
+												                return val;
+												            }
+												            console.log('Scrum Masters If pop-up success function');
+												             var userstorySV=result.get('FormattedID')
+
+												            // ********** START *********** WINDOW 2 *************
+												            Ext.create('Ext.window.Window', {
+												                title: 'Planning Poker-Scrum Master View!: ' + userstorySV,
+												                items: [
+                                                                        //***************START PANEL FORM 2.1   *******************
+                                                                        Ext.create('Ext.form.Panel', {
+                                                                            defaultType: 'textfield', height: 100, width: 850, frame: true, layout: 'hbox', pack: 'start', bodyPadding: 5,
+                                                                            title: 'Submit the final Score',
+                                                                            buttons: [{
+                                                                                text: 'Submit', formBind: true, disabled: true,
+                                                                                handler: function () {
+                                                                                    var estFinal = Ext.getCmp('finalEstimate').getValue();
+                                                                                    var justFinal = Ext.getCmp('finalJustification').getValue();
+                                                                                    rec.set('PlanEstimate', estFinal);
+
+                                                                                    /****************************************Save********/
+
+                                                                                    var jsonobj = f_newEstimate(name, Ext.getCmp('finalEstimate').getValue(), role, Ext.getCmp('finalJustification').getValue());
+                                                                                    console.log("json raw in final estimate", jsonobj);
+                                                                                    //console.log("json justi is", jsonobj.justification);
+                                                                                    console.log("PO note in final estimate", result.get('c_PONote'));
+                                                                                    var existingPONote = result.get('c_PONote');
+                                                                                    var newponote = '';
+                                                                                    if (existingPONote.length == 0) {
+                                                                                        newponote = '[' + jsonobj + ']';
+                                                                                    }
+                                                                                    else {
+                                                                                        replacestr = ',' + jsonobj + ']';
+                                                                                        console.log("Existing PO note is,", myglobalData);
+                                                                                        console.log("Reload counter", reloadcounter,Number(reloadcounter));
+                                                                                        if (myglobalData != null)
+                                                                                            {
+                                                                                            existingPONote = myglobalData;
+                                                                                            }
+                                                                                        newponote = existingPONote.replace(']', replacestr);
+                                                                                    }
+                                                                                    rec.set('c_PONote', newponote);
+                                                                                    console.log("PO note in new note", newponote); 
+                                                                                    rec.save();
+                                                                                    //this.up('window').close();
+                                                                                    //console.log('Submit button Success *** '+rec);
+                                                                                }
+                                                                            }],
+                                                                            items: [{ fieldLabel: 'Final Estimate', name: 'finalEstimate', id: 'finalEstimate', allowBlank: false, padding: 2, allowNull: true },
+                                                                                   { fieldLabel: 'Final Justification', name: 'Justification', id: 'finalJustification', allowBlank: false, padding: 2, allowNull: true }],
+                                                                            
+                                                                            renderTo: Ext.getBody()
+                                                                        }),
+                                                                        //**************END PANEL FORM 2.1     ********************
+
+                                                                        //******* START ********PANEL FORM 2.2  *******************
+                                                                        Ext.create('Ext.form.Panel', {
+                                                                            bodyPadding: 5, width: 850, frame: true, title: 'Team Estimate References', layout: 'vbox',
+                                                                            fieldDefaults: { labelAlign: 'left', msgTarget: 'side' },
+
+                                                                            // The form will submit an AJAX request to this URL when submitted
+                                                                            url: 'save-form.php',
+
+                                                                            // Fields will be arranged vertically, stretched to full width
+                                                                            //layout: 'anchor', defaults: { anchor: '100%' },
+
+                                                                            // The fields
+                                                                            defaultType: 'textfield',
+
+                                                                            items: [
+                                                                                {
+                                                                                    columnWidth: 0.60, xtype: 'grid', store: store, height: 200, width: "100%",
+                                                                                    //title:'General',
+                                                                                    columns: [
+                                                                                      { id: 'name', header: 'Name', width: 200, flex: 1, sortable: true, dataIndex: 'name' },
+                                                                                      { header: 'Role', width: 125, sortable: true, dataIndex: 'role' },
+                                                                                      { header: 'Point Est', width: 50, sortable: true, renderer: change, dataIndex: 'points' },
+                                                                                      { header: 'Justification', width: 150, sortable: true, dataIndex: 'justification' },
+                                                                                      { header: "Time Stamp", width: 100, sortable: true, renderer: Ext.util.Format.dateRenderer('m-d,g:i a'), dataIndex: 'UpdatedTime' }
+                                                                                    ],
+                                                                                    stripeRows: true,
+                                                                                    autoExpandColumn: 'name',
+                                                                                    autoExpandColumn: 'Justification'
+                                                                                }],
+
+                                                                            // *******  START ********** BUTTONS *************************
+                                                                            buttons: [
+                                                                                {
+                                                                                    text: 'Re-Load',
+                                                                                    handler: function () {
+                                                                                        console.log("Result in reset :", objectId);
+                                                                                        //var myglobalData;
+                                                                                        reloadcounter = Number(reloadcounter) + 1;
+                                                                                        var myStore = Ext.create('Rally.data.wsapi.Store', {
+                                                                                            model: 'User Story',
+                                                                                            autoLoad: true,                         // <----- Don't forget to set this to true! heh
+                                                                                            filters: [
+                                                                                                    {
+                                                                                                        property: 'ObjectID',
+                                                                                                        operator: '=',
+                                                                                                        value: objectId
+                                                                                                    }
+                                                                                            ],
+                                                                                            listeners: {
+                                                                                                load: function (myStore, myData, success) {
+
+                                                                                                                                                                                                        
+                                                                                                    //console.log('got data!', myStore, myData);
+                                                                                                    //this._loadGrid(myStore);      // if we did NOT pass scope:this below, this line would be incorrectly trying to call _createGrid() on the store which does not exist.
+                                                                                                    myglobalData = myStore.data.items["0"].data.c_PONote;
+                                                                                                    var versionID = myStore.data.items["0"].data.VersionId;
+                                                                                                    console.log("my golbal data", myglobalData);
+                                                                                                    console.log("my data", myData);
+                                                                                                  //  console.log("my version data", versionID);
+                                                                                                                                                                                                    
+                                                                                                    store.loadData(JSON.parse(myglobalData));
+                                                                                                },
+                                                                                                scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
+                                                                                            },
+                                                                                            fetch: ['ObjectID', 'c_PONote']   // Look in the WSAPI docs online to see all fields available!
+                                                                                        });
+
+
+
+                                                                                        this.up('form').getForm().reset();
+                                                                                    }
+                                                                                },
+                                                                                {
+                                                                                    text: 'Close', handler: function () { this.up('window').close(); }
+                                                                                }],
+                                                                            // ******* END ********** BUTTONS *************************
+                                                                            renderTo: Ext.getBody(),
+
+                                                                        })
+                                                                    //******* END *******PANEL FORM 2.2    ********************
+												                ]
+												            }).show();
+												            // ********** END *********** WINDOW 2*** *************
+												        }
+												    }, scope: this,
+												});
+							                },
+							                // ************* END SUCCESS FUNCTION *******************
+							                failure: function () { },
+							                scope: this
+							            });//*************** END MODEL 2 ****************************
+							        }//End Of If(role == Scrum Master)
+							    }
+                                //,
+							    //listener: {
+							    //    load: {
+							    //        fn: function () {
+							    //            this._getObjectValues('1234');
+							    //        }
+							    //    }
+							    //}
+
+							}]
+						},
+					    storeConfig:
+						{
+						    model: 'userstory'
+						}, scope: this//Subbu
+					});
+
+
+			    },
+            		   
+
+			    scope: this//Subbu
+
+
+			});
+            Rally.launchApp('MyRallyPoker', {
+                name: 'MyRallyPoker'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+    </style>
+</head>
+<body>
+</body>
+</html>
